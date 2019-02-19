@@ -1,0 +1,6 @@
+{
+  "name": "shopify-bulk-file-downloader",
+  "dependencies": {
+    "node-fetch": "^2.3.0"
+  }
+}
