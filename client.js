@@ -2,69 +2,58 @@ var copy_to_clipboard = copy;
 
 var LIMIT = 250;
 
-get_pages_count()
-  .then((pages_count) => {
-    var promises = Array.from({ length: pages_count }, (_, index) => {
-      return () => $.get(`/admin/settings/files?limit=${LIMIT}&page=${(index + 1)}`)
-        .then((res) => {
-          var div = document.createElement("div");
+var all_file_urls = [];
 
-          div.innerHTML = res;
+var current_page = 0;
 
-          var file_inputs = div.querySelectorAll("tbody .next-input");
-          var file_inputs_urls = Array.from(file_inputs).map((input) => input.value);
+get_file_urls();
 
-          return file_inputs_urls;
-        });
-    });
+function get_file_urls(cursor = '') {
+  fetch(`/admin/settings/files?limit=${LIMIT}&after=${cursor}`, {
+    credentials: 'same-origin'
+  })
+    .then((res) => res.text())
+    .then((res) => {
+      var res_document = new DOMParser().parseFromString(res, 'text/html');
 
-    var promise = Promise_sequential(promises);
+      var json_element = res_document.querySelector('[data-serialized-id="apollo"]');
+      var json = JSON.parse(json_element.innerHTML);
 
-    promise
-      .then((res) => {
-        res = res
-          .reduce((acc, item) => {
-            acc = acc.concat(item);
-            return acc;
-          }, [])
-          .filter((item, index, array) => {
-            return array.indexOf(item) === index;
-          });
-
-        copy_to_clipboard(res);
-        alert("File URLS have been copied to your clipboard!");
-      })
-      .catch((err) => {
-        console.log(err);
+      var keys = Object.keys(json).filter((key) => {
+        return key.startsWith('Image:gid:') || key.startsWith('GenericFile:gid:');
       });
-  });
 
-function get_pages_count() {
-  return new Promise((resolve, reject) => {
-    var pages_count = 1;
+      var objects = keys.map((key) => json[key]);
 
-    poll();
+      var urls = objects.map((object) => {
+        return object.originalSrc || object.url;
+      });
 
-    async function poll() {
-      var res = await $.get(`/admin/settings/files?limit=${LIMIT}&page=${pages_count}`);
+      var root_query_files_objects = Object.keys(json).reduce((acc, key) => {
+        if (json[key].cursor) {
+          acc = acc.concat(json[key]);
+        }
 
-      var div = document.createElement("div");
+        return acc;
+      }, []);
 
-      div.innerHTML = res;
+      var root_query_files_objects_last = root_query_files_objects.slice(-1)[0];
 
-      var tbody = div.querySelector("tbody");
+      all_file_urls = all_file_urls.concat(urls);
 
-      if (tbody) {
-        pages_count += 1;
-      } else {
-        return resolve((pages_count - 1));
+      current_page += 1;
+
+      console.log(`Still working - currently on page ${current_page}`);
+
+      if (!root_query_files_objects_last) {
+        copy_to_clipboard(all_file_urls);
+        alert('File URLS have been copied to your clipboard!');
+        return;
       }
 
-      return poll();
-    };
-  });
-};
-
-function Promise_sequential(r) {
-  if(!Array.isArray(r))throw new Error("First argument need to be an array of Promises");let e=0,n=[];return r.concat(()=>Promise.resolve()).reduce((r,o)=>r.then(function(r){return 0!=e++&&n.push(r),o(r,n,e)}),Promise.resolve(!1)).then(()=>n)
+      get_file_urls(root_query_files_objects_last.cursor);
+    })
+    .catch((err) => {
+      console.log(err);
+    });
 };
