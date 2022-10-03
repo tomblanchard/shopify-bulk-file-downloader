@@ -1,26 +1,41 @@
-var fs = require("fs");
-var fetch = require("node-fetch");
+var Downloader = require('nodejs-file-downloader');
 
-var file_urls = require("./file-urls");
+var fileUrls = require('./file-urls');
 
-if (!fs.existsSync("./files")) fs.mkdirSync("./files");
+var currentFile = 0;
 
-var promises = file_urls.map((file_url) => {
-  return fetch(file_url)
-    .then((res) => {
-      var file_name = res.url.split("/").pop().split("?")[0];
-      var dest = fs.createWriteStream(`./files/${file_name}`);
-      res.body.pipe(dest);
-    })
-    .catch((err) => {
-      console.log(err);
-    });
-});
+var totalSuccessCount = 0;
 
-Promise.all(promises)
-  .then(() => {
-    console.log("Success!")
-  })
-  .catch((err) => {
-    console.log("Error!")
+downloadFile(fileUrls[currentFile]);
+
+async function downloadFile(fileUrl) {
+  var downloader = new Downloader({
+    url: fileUrl,
+    directory: './files',
+    cloneFiles: false,
+    maxAttempts: 5,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 12.6; rv:105.0) Gecko/20100101 Firefox/105.0'
+    }
   });
+
+  try {
+    (async () => {
+      var { filePath } = await downloader.download();
+
+      currentFile++;
+      totalSuccessCount++;
+
+      console.log(`Success - File number: ${currentFile} - File name: ${filePath.replace('./files/', '')}`);
+      console.log(`Total success count: ${totalSuccessCount}`);
+
+      if (currentFile >= fileUrls.length) {
+        return;
+      }
+
+      downloadFile(fileUrls[currentFile]);
+    })();
+  } catch (error) {
+    console.log('Error', error);
+  }
+};

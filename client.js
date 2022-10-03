@@ -1,59 +1,102 @@
-var copy_to_clipboard = copy;
+var copyToClipboard = copy;
 
 var LIMIT = 250;
 
-var all_file_urls = [];
+var allFileUrls = [];
 
-var current_page = 0;
+var currentPage = 0;
 
-get_file_urls();
+var csrfToken = JSON.parse(
+  document.querySelector('[data-serialized-id="csrf-token"]').innerHTML
+);
 
-function get_file_urls(cursor = '') {
-  fetch(`/admin/settings/files?limit=${LIMIT}&after=${cursor}`, {
-    credentials: 'same-origin'
+var query = `
+  query FilesManagerFiles($first: Int, $after: String, $sortKey: FileSortKeys, $reverse: Boolean, $query: String) {
+    files(
+      first: $first
+      after: $after
+      sortKey: $sortKey
+      reverse: $reverse
+      query: $query
+    ) {
+      edges {
+        cursor
+        node {
+          ... on GenericFile {
+            url
+          }
+          ... on MediaImage {
+            image {
+              url
+            }
+          }
+          ... on Video {
+            originalSource {
+              url
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+getFileUrls();
+
+function getFileUrls(cursor = null) {
+  var body = {
+    operationName: 'FilesManagerFiles',
+    query: query,
+    variables: {
+      first: LIMIT,
+      after: cursor,
+      sortKey: 'CREATED_AT',
+      reverse: true,
+      query: 'status:ready'
+    }
+  };
+
+  fetch('/admin/internal/web/graphql/core?operation=FilesManagerFiles&type=query', {
+    headers: {
+      'accept': 'application/json',
+      'content-type': 'application/json',
+      'x-csrf-token': csrfToken
+    },
+    method: 'POST',
+    body: JSON.stringify(body)
   })
-    .then((res) => res.text())
+    .then((res) => res.json())
     .then((res) => {
-      var res_document = new DOMParser().parseFromString(res, 'text/html');
+      console.log(res);
 
-      var json_element = res_document.querySelector('[data-serialized-id="apollo"]');
-      var json = JSON.parse(json_element.innerHTML);
+      var fileUrls = res.data.files.edges
+        .map((edge) => {
+          return (
+            edge.node.url ||
+            (edge.node.image && edge.node.image.url) ||
+            (edge.node.originalSource && edge.node.originalSource.url)
+          );
+        });
 
-      var keys = Object.keys(json).filter((key) => {
-        return key.startsWith('Image:gid:') || key.startsWith('GenericFile:gid:');
-      });
+        var fileLastCursor = (
+          res.data.files.edges.length ? res.data.files.edges.slice(-1)[0].cursor : null
+        );
 
-      var objects = keys.map((key) => json[key]);
+        allFileUrls = allFileUrls.concat(fileUrls);
 
-      var urls = objects.map((object) => {
-        return object.originalSrc || object.url;
-      });
+        currentPage += 1;
 
-      var root_query_files_objects = Object.keys(json).reduce((acc, key) => {
-        if (json[key].cursor) {
-          acc = acc.concat(json[key]);
+        console.log(`Still working - currently on page ${currentPage}`);
+
+        if (!fileLastCursor) {
+          copyToClipboard(allFileUrls);
+          alert('File URLS have been copied to your clipboard!');
+          return;
         }
 
-        return acc;
-      }, []);
-
-      var root_query_files_objects_last = root_query_files_objects.slice(-1)[0];
-
-      all_file_urls = all_file_urls.concat(urls);
-
-      current_page += 1;
-
-      console.log(`Still working - currently on page ${current_page}`);
-
-      if (!root_query_files_objects_last) {
-        copy_to_clipboard(all_file_urls);
-        alert('File URLS have been copied to your clipboard!');
-        return;
-      }
-
-      get_file_urls(root_query_files_objects_last.cursor);
+        getFileUrls(fileLastCursor);
     })
     .catch((err) => {
-      console.log(err);
+      console.log(err)
     });
 };

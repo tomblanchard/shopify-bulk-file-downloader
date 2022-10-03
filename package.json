@@ -1,6 +1,6 @@
 {
   "name": "shopify-bulk-file-downloader",
   "dependencies": {
-    "node-fetch": "^2.3.0"
+    "nodejs-file-downloader": "^4.10.2"
   }
 }
